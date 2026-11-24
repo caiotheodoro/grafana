@@ -344,6 +344,46 @@ func TestNewCloudRoutesLoader_CoreURLAloneActivatesWithoutCapToken(t *testing.T)
 	require.Equal(t, sourceCore, pluginManifestsTargetOf(loader, sourceCore).keyPrefix)
 }
 
+func TestNewCloudRoutesLoader_CoreURLAcceptsSeveralURLs(t *testing.T) {
+	cfg := cfgWithCloudRouterSection(t, map[string]string{
+		"plugins_url": "https://plugins.invalid/plugins",
+		"core_url":    " https://core-a.invalid/apps, ,https://core-b.invalid/apps,https://core-a.invalid/apps,https://core-c.invalid/apps ",
+	})
+	cfg.ExtJWTAuth.JWKSUrl = "https://jwks.invalid/keys"
+	cfg.ExtJWTAuth.Audiences = []string{"grafana"}
+
+	loaderIface, err := NewCloudRoutesLoader(cfg, PluginDependencies{MetricsRegister: prometheus.NewRegistry()})
+	require.NoError(t, err)
+	loader, ok := loaderIface.(*cloudLoader)
+	require.True(t, ok)
+
+	type got struct{ source, configName, keyPrefix, url string }
+	var targets []got
+	for _, s := range loader.sources {
+		if target, ok := s.fetcher.(*pluginManifestsTarget); ok {
+			targets = append(targets, got{target.source, target.configSource(), target.keyPrefix, target.url})
+		}
+	}
+	// Priority order: plugins, then each core URL in the order given.
+	require.Equal(t, []got{
+		{"plugins", "plugins", "plugins", "https://plugins.invalid/plugins"},
+		{"core", "core", "core", "https://core-a.invalid/apps"},
+		{"core-2", "core", "core-2", "https://core-b.invalid/apps"},
+		{"core-3", "core", "core-3", "https://core-c.invalid/apps"},
+	}, targets)
+}
+
+func TestNewCloudRoutesLoader_CoreURLRejectsNonAbsoluteURLInList(t *testing.T) {
+	cfg := cfgWithCloudRouterSection(t, map[string]string{
+		"core_url": "https://core-a.invalid/apps,/just/a/path",
+	})
+	cfg.ExtJWTAuth.JWKSUrl = "https://jwks.invalid/keys"
+	cfg.ExtJWTAuth.Audiences = []string{"grafana"}
+
+	_, err := NewCloudRoutesLoader(cfg, PluginDependencies{})
+	require.ErrorContains(t, err, "must be absolute")
+}
+
 func TestNewCloudRoutesLoader_CoreAndPluginsURLShareRegisterer(t *testing.T) {
 	cfg := cfgWithCloudRouterSection(t, map[string]string{
 		"plugins_url": "https://plugins.invalid/plugins",

@@ -1,6 +1,7 @@
 package router
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -31,11 +32,15 @@ type pluginManifestsTarget struct {
 	polledSource
 	*pluginConnections
 
-	keyPrefix string // prefixes every backend Key, so sources never share a key
-	url       string
-	client    *http.Client
-	patterns  []*regexp.Regexp
-	deps      PluginDependencies
+	// configName is the config key prefix (plugins, core or bridge) of the
+	// setting the target's URL comes from. It differs from source when a
+	// setting has several URLs. Empty means source.
+	configName string
+	keyPrefix  string // prefixes every backend Key, so sources never share a key
+	url        string
+	client     *http.Client
+	patterns   []*regexp.Regexp
+	deps       PluginDependencies
 }
 
 // pluginConnections holds the connections to the plugin deployments of one
@@ -120,9 +125,14 @@ func newPluginManifestsTarget(
 // it. Tokens the router sends a plugin name its ID as their audience, so the ID
 // must have the shape of an app plugin ID, as local plugins must. Core APIs may
 // have no ID, and so may bridge entries; their tokens name their API group instead.
+// configSource returns the config key prefix the target's URL comes from.
+func (t *pluginManifestsTarget) configSource() string {
+	return cmp.Or(t.configName, t.source)
+}
+
 func (t *pluginManifestsTarget) validatePluginID(id string) error {
 	if id == "" {
-		if t.source == sourceCore || t.source == sourceBridge {
+		if name := t.configSource(); name == sourceCore || name == sourceBridge {
 			return nil
 		}
 		return errors.New("missing plugin ID")
@@ -169,7 +179,7 @@ func (t *pluginManifestsTarget) fetch(ctx context.Context) ([]Backend, int, erro
 			}
 
 			// Only the operator-configured core source may serve core groups.
-			backend, err := buildPluginBackend(entry.Definition.JSONData.ID, manifest, clients, t.deps, nil, t.source == sourceCore)
+			backend, err := buildPluginBackend(entry.Definition.JSONData.ID, manifest, clients, t.deps, nil, t.configSource() == sourceCore)
 
 			if entry.Definition.JSONData.ID == "" && errors.Is(err, errNoServedVersions) {
 				// A core or bridge entry has no plugin ID, and one with no served

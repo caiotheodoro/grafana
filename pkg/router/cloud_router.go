@@ -47,14 +47,20 @@ func SetDefaultCoreURL(cfg *setting.Cfg, url string) bool {
 // share the [router.backend_grpc] connection settings, which are only read
 // when one of the URLs is set. Each has its own TLS settings for its poll, from
 // <name>_ca_file and <name>_insecure.
+//
+// Each URL setting takes a comma-separated list, so a source can be served by
+// several servers. Every URL is its own target, with the source's settings,
+// and an earlier URL wins a group that a later one also serves. The first URL
+// of a source is named after it, and the later ones <source>-2, <source>-3, and
+// so on.
 func readManifestsTargets(cfg *setting.Cfg, section *setting.DynamicSection, deps PluginDependencies) (targets []*pluginManifestsTarget, err error) {
 	// Each source's name is also its config key prefix, its metric label and its backend key prefix. core is not filtered by group patterns.
 	sources := []string{sourcePlugins, sourceCore, sourceBridge}
-	urls := make([]string, len(sources))
+	urls := make([][]string, len(sources))
 	configured := false
 	for i, s := range sources {
-		urls[i] = section.Key(s + "_url").MustString("")
-		configured = configured || urls[i] != ""
+		urls[i] = splitURLList(section.Key(s + "_url").MustString(""))
+		configured = configured || len(urls[i]) > 0
 	}
 	if !configured {
 		return nil, nil
@@ -65,25 +71,44 @@ func readManifestsTargets(cfg *setting.Cfg, section *setting.DynamicSection, dep
 		return nil, err
 	}
 	for i, source := range sources {
-		if urls[i] == "" {
+		if len(urls[i]) == 0 {
 			continue
 		}
 		patterns := compileGroupPatterns(readGroupPatterns(section, cloudRouterSection,
 			source+"_group_patterns", source+"_group_regex"))
-		client, err := newPluginManifestsClient(section, source)
-		if err != nil {
-			return nil, err
+		for n, rawURL := range urls[i] {
+			name := source
+			if n > 0 {
+				name = fmt.Sprintf("%s-%d", source, n+1)
+			}
+			client, err := newPluginManifestsClient(section, source)
+			if err != nil {
+				return nil, err
+			}
+			target, err := newPluginManifestsTarget(name, rawURL, patterns, client, grpcConfig, deps)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", cloudRouterSection, err)
+			}
+			target.configName = source
+			if target.cooldown, err = pluginManifestsCooldown(section, source); err != nil {
+				return nil, err
+			}
+			targets = append(targets, target)
 		}
-		target, err := newPluginManifestsTarget(source, urls[i], patterns, client, grpcConfig, deps)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", cloudRouterSection, err)
-		}
-		if target.cooldown, err = pluginManifestsCooldown(section, source); err != nil {
-			return nil, err
-		}
-		targets = append(targets, target)
 	}
 	return targets, nil
+}
+
+// splitURLList splits a comma-separated list of URLs, dropping blank entries
+// and repeats.
+func splitURLList(list string) []string {
+	var urls []string
+	for _, u := range strings.Split(list, ",") {
+		if u = strings.TrimSpace(u); u != "" && !slices.Contains(urls, u) {
+			urls = append(urls, u)
+		}
+	}
+	return urls
 }
 
 // pluginManifestsCooldown paces a plugin manifests source by its
