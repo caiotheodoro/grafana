@@ -1,8 +1,8 @@
-import { css } from '@emotion/css';
-import clsx from 'clsx';
+import { css, cx } from '@emotion/css';
 import {
   type ReactElement,
   useCallback,
+  useContext,
   useState,
   useRef,
   useImperativeHandle,
@@ -20,6 +20,7 @@ import { type IconName } from '../../types/icon';
 import { Icon } from '../Icon/Icon';
 import { Stack } from '../Layout/Stack/Stack';
 
+import { MenuSizeContext } from './MenuSizeContext';
 import { SubMenu } from './SubMenu';
 
 /** @internal */
@@ -29,6 +30,10 @@ export type MenuItemElement = HTMLAnchorElement & HTMLButtonElement & HTMLDivEle
 export interface MenuItemProps<T = unknown> {
   /** Label of the menu item */
   label: string;
+  /** Overrides the parent menu density. */
+  size?: 'sm' | 'md';
+  /** Visual treatment for the menu item. */
+  variant?: 'default' | 'link';
   /** Description of item */
   description?: string;
   /** Aria label for accessibility support */
@@ -66,6 +71,8 @@ export interface MenuItemProps<T = unknown> {
   iconColor?: string;
   /* Optional component that will be shown together with other options. Does not get passed any props. */
   component?: React.ComponentType;
+  /** Custom data attributes (for example `data-analytics-id`), rendered on the menu item element */
+  [key: `data-${string}`]: string | undefined;
 }
 
 /** @internal */
@@ -75,6 +82,7 @@ export const MenuItem = React.memo(
       url,
       icon,
       label,
+      variant = 'default',
       description,
       ariaLabel,
       ariaChecked,
@@ -91,8 +99,10 @@ export const MenuItem = React.memo(
       shortcut,
       testId,
       iconColor,
+      ...rest
     } = props;
-    const styles = useStyles2(getStyles);
+    const menuSize = useContext(MenuSizeContext);
+    const styles = useStyles2(getStyles, props.size ?? menuSize);
     // Ignore iconColor when destructive or disabled — those states own the colors.
     const resolvedIconColor = iconColor && !destructive && !disabled ? iconColor : undefined;
     const [isActive, setIsActive] = useState(active);
@@ -114,11 +124,15 @@ export const MenuItem = React.memo(
       setIsActive(false);
     }, [disabled]);
 
+    // Menu items are often built by spreading item objects, so only forward data attributes to the DOM.
+    const dataAttributes = Object.fromEntries(Object.entries(rest).filter(([key]) => key.startsWith('data-')));
+
     const hasSubMenu = childItems && childItems.length > 0;
     const ItemElement = hasSubMenu ? 'div' : url === undefined ? 'button' : 'a';
-    const itemStyle = clsx(
+    const itemStyle = cx(
       {
         [styles.item]: true,
+        [styles.link]: variant === 'link' && !destructive && !disabled,
         [styles.active]: isActive,
         [styles.disabled]: disabled,
         [styles.destructive]: destructive && !disabled,
@@ -203,9 +217,10 @@ export const MenuItem = React.memo(
         // position correctly (e.g. "X of Y") and the menu has proper ARIA semantics.
         // Callers can override via the role prop.
         role={role ?? 'menuitem'}
+        data-testid={testId}
+        {...dataAttributes}
         data-role="menuitem" // used to identify menuitem in Menu.tsx
         ref={localRef}
-        data-testid={testId}
         aria-label={ariaLabel}
         aria-checked={ariaChecked}
         // Announce to screen readers that this item opens a submenu, and whether it is
@@ -219,12 +234,18 @@ export const MenuItem = React.memo(
           {icon && (
             <Icon
               name={icon}
-              className={clsx(styles.icon, resolvedIconColor && css({ color: resolvedIconColor }))}
+              className={cx(styles.icon, resolvedIconColor && css({ color: resolvedIconColor }))}
               aria-hidden
             />
           )}
-          <span className={clsx(styles.ellipsis, styles.label)}>{label}</span>
-          <div className={clsx(styles.rightWrapper, { [styles.withShortcut]: hasShortcut })}>
+          <span
+            className={cx(styles.ellipsis, styles.label, {
+              [styles.linkLabel]: variant === 'link' && !destructive && !disabled,
+            })}
+          >
+            {label}
+          </span>
+          <div className={cx(styles.rightWrapper, { [styles.withShortcut]: hasShortcut })}>
             {hasShortcut && (
               <div className={styles.shortcut}>
                 <Icon name="keyboard" title={t('grafana-ui.menu-item.keyboard-shortcut-label', 'Keyboard shortcut')} />
@@ -244,7 +265,7 @@ export const MenuItem = React.memo(
         </Stack>
         {description && (
           <div
-            className={clsx(styles.description, styles.ellipsis, {
+            className={cx(styles.description, styles.ellipsis, {
               [styles.descriptionWithIcon]: icon !== undefined,
             })}
           >
@@ -259,13 +280,14 @@ export const MenuItem = React.memo(
 
 MenuItem.displayName = 'MenuItem';
 
-const getStyles = (theme: GrafanaTheme2) => {
+const getStyles = (theme: GrafanaTheme2, size: 'sm' | 'md') => {
   const visualRefreshEnabled = theme.flags.visualDesignRefresh;
   const menuPadding = theme.components.menu.padding * theme.spacing.gridSize;
+  const linkLabel = css({ color: theme.colors.text.primary });
 
   return {
     item: css({
-      ...theme.typography.body,
+      ...(size === 'sm' ? theme.typography.bodySmall : theme.typography.body),
       background: 'none',
       cursor: 'pointer',
       whiteSpace: 'nowrap',
@@ -274,8 +296,8 @@ const getStyles = (theme: GrafanaTheme2) => {
       flexDirection: 'column',
       alignItems: 'stretch',
       justifyContent: 'center',
-      padding: theme.spacing(0.5, 1.5),
-      minHeight: theme.spacing(4),
+      padding: theme.spacing(0.5, size === 'sm' ? 0.5 : 1.5),
+      minHeight: theme.spacing(size === 'sm' ? 3 : 4),
       borderRadius: getInternalRadius(theme, menuPadding, { parentBorderWidth: 0, parentBorderRadius: 'lg' }),
       margin: 0,
       border: 'none',
@@ -295,6 +317,15 @@ const getStyles = (theme: GrafanaTheme2) => {
         color: theme.colors.text.primary,
       }
     ),
+    link: css({
+      color: theme.colors.text.primary,
+      '&:hover, &:focus-visible': {
+        background: 'none',
+        color: theme.colors.text.primary,
+        textDecoration: 'underline',
+      },
+    }),
+    linkLabel,
     active: css({
       background: theme.colors.action.hover,
       // needed to show active items in forced colors mode

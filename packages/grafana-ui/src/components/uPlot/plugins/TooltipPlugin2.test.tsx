@@ -198,6 +198,19 @@ describe('TooltipPlugin2', () => {
     });
   });
 
+  it('does not constrain unpinned tooltip height', async () => {
+    const { setSeriesCallback, initCallback, mockUPlot } = setUp(undefined, {
+      render: () => <div style={{ minHeight: 1200 }}>Tooltip content</div>,
+    });
+    await act(async () => {
+      initCallback(mockUPlot);
+      setSeriesCallback(mockUPlot, 1);
+    });
+
+    const surface = screen.getByTestId(selectors.components.Panels.Visualization.Tooltip.Wrapper);
+    expect(surface).not.toHaveStyle({ maxHeight: 'calc(100vh - 32px)' });
+  });
+
   it('keeps the pinned close button outside scrolling content and dismisses on click', async () => {
     const { setSeriesCallback, initCallback, mockUPlot, setLegendCallback } = setUp(undefined, {
       maxWidth: 320,
@@ -218,6 +231,29 @@ describe('TooltipPlugin2', () => {
     fireEvent.scroll(surface, { target: { scrollTop: 200 } });
     expect(close).toBeVisible();
     await userEvent.click(close);
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument());
+  });
+
+  it('tabs to the pinned close button before tooltip content', async () => {
+    const user = userEvent.setup();
+    const { setSeriesCallback, initCallback, mockUPlot, setLegendCallback } = setUp(undefined, {
+      render: () => <button type="button">Tooltip action</button>,
+    });
+    await act(async () => {
+      initCallback(mockUPlot);
+      setSeriesCallback(mockUPlot, 1);
+      setLegendCallback(mockUPlot);
+      mockUPlot.over.dispatchEvent(new MouseEvent('click'));
+    });
+
+    const close = await screen.findByRole('button', { name: 'Close' });
+    await user.tab();
+    expect(close).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Tooltip action' })).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(close).toHaveFocus();
+    await user.keyboard('{Enter}');
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument());
   });
 
