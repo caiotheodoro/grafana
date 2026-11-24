@@ -17,6 +17,7 @@ export function RuleListErrors(): ReactElement {
   const [closed, setClosed] = useLocalStorage('grafana.unifiedalerting.hideErrors', false);
   const promRuleRequests = useUnifiedAlertingSelector((state) => state.promRules);
   const rulerRuleRequests = useUnifiedAlertingSelector((state) => state.rulerRules);
+  const rulesSourceListError = useUnifiedAlertingSelector((state) => state.rulesSourceList.error);
   const styles = useStyles2(getStyles);
 
   const errors = useMemo((): JSX.Element[] => {
@@ -39,6 +40,16 @@ export function RuleListErrors(): ReactElement {
 
     const unknownError = t('alerting.rule-list-errors.unknown-error', 'Unknown error.');
 
+    if (rulesSourceListError) {
+      result.push(
+        <>
+          <Trans i18nKey="alerting.rule-list-errors.failed-to-load-rules-sources">
+            Failed to load the list of rules sources:
+          </Trans>{' '}
+          {rulesSourceListError.message || unknownError}
+        </>
+      );
+    }
     if (grafanaPromError) {
       result.push(
         <>
@@ -95,7 +106,7 @@ export function RuleListErrors(): ReactElement {
     );
 
     return result;
-  }, [promRuleRequests, rulerRuleRequests, styles.dsLink]);
+  }, [promRuleRequests, rulerRuleRequests, rulesSourceListError, styles.dsLink]);
 
   return (
     <>

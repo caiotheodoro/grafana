@@ -66,6 +66,7 @@ const RuleListV1 = () => {
 
   const promRuleRequests = useUnifiedAlertingSelector((state) => state.promRules);
   const rulerRuleRequests = useUnifiedAlertingSelector((state) => state.rulerRules);
+  const rulesSourceListError = useUnifiedAlertingSelector((state) => state.rulesSourceList.error);
 
   const loading = rulesDataSourceNames.some(
     (name) => promRuleRequests[name]?.loading || rulerRuleRequests[name]?.loading
@@ -119,7 +120,12 @@ const RuleListV1 = () => {
 
   // Show splash only when we loaded all of the data sources and none of them has alerts
   const hasNoAlertRulesCreatedYet =
-    allPromLoaded && allPromEmpty && promRequests.length > 0 && allRulerEmpty && allRulerLoaded;
+    !rulesSourceListError &&
+    allPromLoaded &&
+    allPromEmpty &&
+    promRequests.length > 0 &&
+    allRulerEmpty &&
+    allRulerLoaded;
   const hasAlertRulesCreated = !hasNoAlertRulesCreatedYet;
 
   const combinedNamespaces: CombinedRuleNamespace[] = useCombinedRuleNamespaces();
