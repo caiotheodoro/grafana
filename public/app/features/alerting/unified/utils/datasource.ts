@@ -37,7 +37,7 @@ import {
 } from './alertmanagerPermissions';
 import { GRAFANA_DATASOURCE_NAME, GRAFANA_RULES_SOURCE_NAME } from './constants';
 import { isGrafanaRuleIdentifier } from './rules';
-import { isCloudRulesSource, isGrafanaRulesSource } from './rulesSource';
+import { isCloudRulesSource } from './rulesSource';
 
 // Re-exported for backward compatibility. Moved to constants.ts to break a circular dependency
 // via k8s/utils.ts → datasource.ts → ability hooks → access-control.ts.
@@ -93,14 +93,7 @@ export function getRulesDataSources() {
     .sort((a, b) => collator.compare(a.name, b.name));
 }
 
-export function getRulesSourceUniqueKey(rulesSource: RulesSource): string {
-  return isGrafanaRulesSource(rulesSource) ? 'grafana' : rulesSource.uid;
-}
-
-/**
- * @deprecated Reads `config.datasources` synchronously. Use `getDataSourcesForRules` and find the data source by name.
- */
-export function getRulesDataSource(rulesSourceName: string) {
+function getRulesDataSource(rulesSourceName: string) {
   return getRulesDataSources().find((x) => x.name === rulesSourceName);
 }
 
@@ -117,7 +110,7 @@ export function getAlertManagerDataSources() {
     .sort((a, b) => collator.compare(a.name, b.name));
 }
 
-export function isAlertmanagerDataSourceInstance(
+function isAlertmanagerDataSourceInstance(
   dataSource: DataSourceInstanceSettings
 ): dataSource is DataSourceInstanceSettings<AlertManagerDataSourceJsonData> {
   return dataSource.type === DataSourceType.Alertmanager;
@@ -127,10 +120,6 @@ export function isAlertmanagerDataSource(
   dataSource: DataSourceSettings
 ): dataSource is DataSourceSettings<AlertManagerDataSourceJsonData> {
   return dataSource.type === DataSourceType.Alertmanager;
-}
-
-export function getExternalDsAlertManagers() {
-  return getAlertManagerDataSources().filter((ds) => ds.jsonData.handleGrafanaManagedAlerts);
 }
 
 export function isAlertmanagerDataSourceInterestedInAlerts(
@@ -144,19 +133,6 @@ const grafanaAlertManagerDataSource: AlertManagerDataSource = {
   imgUrl: grafanaIconSvg,
   hasConfigurationAPI: true,
 };
-
-// Used only as a fallback for Alert Group plugin
-export function getAllAlertManagerDataSources(): AlertManagerDataSource[] {
-  return [
-    grafanaAlertManagerDataSource,
-    ...getAlertManagerDataSources().map<AlertManagerDataSource>((ds) => ({
-      name: ds.name,
-      displayName: ds.name,
-      imgUrl: ds.meta.info.logos.small,
-      meta: ds.meta,
-    })),
-  ];
-}
 
 /**
  * This method gets all alert managers that the user has access, and then filter them first by being able to handle grafana managed alerts,
@@ -356,12 +332,6 @@ export function ruleIdentifierToRuleSourceIdentifier(ruleIdentifier: RuleIdentif
   };
 }
 
-/**
- * Check if the given type is a supported rules source type. Includes "grafana" for Grafana Managed Rules.
- */
-export function isSupportedRulesSourceType(type: string): type is SupportedRulesSourceType {
-  return type === GRAFANA_RULES_SOURCE_NAME || isSupportedExternalRulesSourceType(type);
-}
 export type SupportedRulesSourceType = 'grafana' | SupportedExternalRulesSourceType;
 export const SUPPORTED_RULE_SOURCE_TYPES = [
   GRAFANA_RULES_SOURCE_NAME,
